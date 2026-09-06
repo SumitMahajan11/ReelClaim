@@ -1,5 +1,9 @@
-# ReelClaim Monorepo
 
+# ReelClaim
+
+[![Backend Tests](https://github.com/SumitMahajan11/ReelClaim/actions/workflows/test.yml/badge.svg)](https://github.com/SumitMahajan11/ReelClaim/actions/workflows/test.yml)
+
+Your existing README content...
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker Compose](https://img.shields.io/badge/Docker-Compose-blue.svg)](docker-compose.yml)
 
