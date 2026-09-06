@@ -3,10 +3,6 @@
 
 [![Backend Tests](https://github.com/SumitMahajan11/ReelClaim/actions/workflows/test.yml/badge.svg)](https://github.com/SumitMahajan11/ReelClaim/actions/workflows/test.yml)
 
-Your existing README content...
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Docker Compose](https://img.shields.io/badge/Docker-Compose-blue.svg)](docker-compose.yml)
-
 ReelClaim is an automated claim verification and credibility auditing system for social media promotional reels and captions. By taking raw post captions (e.g., from Instagram Reels, TikTok, or YouTube Shorts), ReelClaim automatically extracts specific promotional promises—such as free course access, money-back refund policies, job guarantees, or pricing offers—discovers the promoter's official landing page, and crawls target site pages to extract ground-truth facts. It then cross-checks each extracted claim against source site facts using a multi-pass verification engine with anti-hallucination guardrails, producing a detailed per-claim verdict (confirmed, contradicted, partial, or not_found) alongside an aggregate trust score.
 
 ---
