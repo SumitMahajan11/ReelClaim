@@ -117,7 +117,7 @@ def test_phase3_cross_check_429_retry_and_partial_result_on_exhaustion(mock_gene
     assert result.coverage_status == "partially_verified"
     assert result.score_breakdown.confirmed_count == 1
     assert result.score_breakdown.not_found_count == 1
-    assert result.trust_score == 100.0
+    assert result.confidence_tier == "LIKELY_TRUE"
 
 @patch("time.sleep")
 @patch("google.generativeai.GenerativeModel.generate_content")

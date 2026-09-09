@@ -10,6 +10,7 @@ import { CaseIdBanner } from '@/components/CaseIdBanner';
 import { RecentAudits } from '@/components/RecentAudits';
 import { FullAuditResponse, ProgressStep } from '@/lib/types';
 import { auditReel, fetchAuditById } from '@/lib/api';
+import { saveSubmitterAudit } from '@/lib/storage';
 import { RotateCcw, FileText, ShieldAlert } from 'lucide-react';
 import { DeskLampToggle } from '@/components/DeskLampToggle';
 
@@ -33,7 +34,7 @@ export default function Home() {
     }
   }, []);
 
-  const handleAuditSubmit = async (caption: string, url: string, apiKey?: string) => {
+  const handleAuditSubmit = async (params: { caption?: string; videoUrl?: string; overrideUrl?: string; apiKey?: string; youtubeApiKey?: string }) => {
     setIsLoading(true);
     setError(null);
     setAuditResult(null);
@@ -41,11 +42,23 @@ export default function Home() {
     setCurrentStep('extracting');
 
     try {
-      const response = await auditReel(caption, url, apiKey, (step, details) => {
-        setCurrentStep(step);
-        if (details) setRetryDetails(details);
-      });
+      const response = await auditReel(
+        {
+          caption: params.caption,
+          video_url: params.videoUrl,
+          override_url: params.overrideUrl,
+          gemini_api_key: params.apiKey,
+          youtube_api_key: params.youtubeApiKey,
+        },
+        undefined,
+        undefined,
+        (step, details) => {
+          setCurrentStep(step);
+          if (details) setRetryDetails(details);
+        }
+      );
       setAuditResult(response);
+      saveSubmitterAudit(response);
       setCurrentStep('complete');
       setRefreshRecentTrigger((prev) => prev + 1);
 
@@ -210,6 +223,8 @@ export default function Home() {
                   <ReportHeader
                     checkResult={auditResult.check_result}
                     promotedSite={auditResult.promoted_site}
+                    youtubeMetadata={auditResult.youtube_metadata}
+                    factsGathered={auditResult.facts_gathered}
                   />
                 )}
 
@@ -237,7 +252,13 @@ export default function Home() {
 
                     <div className="space-y-3">
                       {(auditResult.check_result?.verdicts || []).map((item, idx) => (
-                        <VerdictCard key={idx} verdictItem={item} index={idx} />
+                        <VerdictCard
+                          key={idx}
+                          verdictItem={item}
+                          index={idx}
+                          auditId={auditResult.id}
+                          submitterToken={auditResult.submitter_token}
+                        />
                       ))}
                     </div>
                   </div>

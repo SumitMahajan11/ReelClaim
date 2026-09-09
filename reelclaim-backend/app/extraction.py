@@ -60,7 +60,7 @@ def extract_claims(caption: str, api_key: Optional[str] = None) -> ExtractionRes
     if not effective_api_key:
         raise ValueError("GEMINI_API_KEY environment variable is missing.")
 
-    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     genai.configure(api_key=effective_api_key)
 
     system_instruction = load_extraction_system_prompt()

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { fetchRecentAudits } from '@/lib/api';
+import { getSubmitterAudits, clearSubmitterAudits } from '@/lib/storage';
 import { RecentAuditItem } from '@/lib/types';
-import { History, RefreshCw, ChevronRight, Database, ExternalLink } from 'lucide-react';
+import { History, RefreshCw, ChevronRight, Shield, Trash2 } from 'lucide-react';
 
 interface RecentAuditsProps {
   onSelectAudit: (auditId: string) => void;
@@ -13,76 +13,96 @@ interface RecentAuditsProps {
 
 export function RecentAudits({ onSelectAudit, selectedAuditId, refreshTrigger }: RecentAuditsProps) {
   const [audits, setAudits] = useState<RecentAuditItem[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [persistenceDisabled, setPersistenceDisabled] = useState<boolean>(false);
 
-  const loadAudits = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await fetchRecentAudits(10, 0);
-      setAudits(data.audits || []);
-      setTotal(data.total || 0);
-      if (data.persistence === 'disabled') {
-        setPersistenceDisabled(true);
-      } else {
-        setPersistenceDisabled(false);
-      }
-    } catch (err: any) {
-      setError('Failed to load recent audits.');
-    } finally {
-      setIsLoading(false);
-    }
+  const loadAudits = () => {
+    const data = getSubmitterAudits();
+    setAudits(data);
   };
 
   useEffect(() => {
     loadAudits();
   }, [refreshTrigger]);
 
-  if (persistenceDisabled) {
-    return (
-      <div className="mt-6 pt-4 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-          <Database className="w-3.5 h-3.5" />
-          <span>Recent Audits</span>
-        </div>
-        <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>
-          Database persistence is disabled in current environment (DATABASE_URL unset).
-        </p>
-      </div>
-    );
-  }
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    clearSubmitterAudits();
+    setAudits([]);
+  };
+
+  const getTierBadgeStyle = (tier: string | null | undefined) => {
+    switch (tier) {
+      case 'VERIFIED':
+        return {
+          bg: 'var(--verdict-verified-bg)',
+          text: 'var(--verdict-verified-text)',
+          label: 'VERIFIED',
+        };
+      case 'LIKELY_TRUE':
+        return {
+          bg: 'var(--verdict-misleading-bg)',
+          text: 'var(--verdict-misleading-text)',
+          label: 'LIKELY TRUE',
+        };
+      case 'CONTRADICTED':
+        return {
+          bg: 'var(--verdict-false-bg)',
+          text: 'var(--verdict-false-text)',
+          label: 'CONTRADICTED',
+        };
+      case 'INSUFFICIENT_EVIDENCE':
+      default:
+        return {
+          bg: 'var(--verdict-unverified-bg)',
+          text: 'var(--verdict-unverified-text)',
+          label: 'INSUFFICIENT',
+        };
+    }
+  };
 
   return (
-    <div className="mt-6 pt-4 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+    <div className="mt-6 pt-4 pb-4 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-          <History className="w-3.5 h-3.5" />
-          <span>Recent Audits ({total})</span>
-        </div>
-        <button
-          type="button"
-          onClick={loadAudits}
-          disabled={isLoading}
-          className="p-1 rounded hover:opacity-80 transition-opacity"
-          title="Refresh list"
-          style={{ color: 'var(--text-muted)' }}
+        <div
+          className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider"
+          style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-        </button>
+          <History className="w-3.5 h-3.5" />
+          <span>Your Audits ({audits.length})</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {audits.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="p-1 rounded hover:opacity-80 transition-opacity"
+              title="Clear local session history"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={loadAudits}
+            className="p-1 rounded hover:opacity-80 transition-opacity"
+            title="Refresh list"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
-      {error ? (
-        <p className="text-xs" style={{ color: 'var(--verdict-contradicted-text)' }}>{error}</p>
-      ) : audits.length === 0 ? (
-        <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>No persisted audits yet.</p>
+      {audits.length === 0 ? (
+        <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>
+          No local audits yet in this browser session.
+        </p>
       ) : (
         <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
           {audits.map((item) => {
             const isSelected = selectedAuditId === item.id;
             const createdDate = item.created_at ? new Date(item.created_at).toLocaleDateString() : '';
+            const tierStyle = getTierBadgeStyle(item.confidence_tier);
 
             return (
               <button
@@ -109,21 +129,15 @@ export function RecentAudits({ onSelectAudit, selectedAuditId, refreshTrigger }:
                     >
                       {item.id.substring(0, 8)}
                     </span>
-                    {item.trust_score !== null && item.trust_score !== undefined ? (
-                      <span
-                        className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded"
-                        style={{
-                          backgroundColor: item.trust_score >= 80 ? 'var(--verdict-verified-bg)' : item.trust_score >= 50 ? 'var(--verdict-partial-bg)' : 'var(--verdict-contradicted-bg)',
-                          color: item.trust_score >= 80 ? 'var(--verdict-verified-text)' : item.trust_score >= 50 ? 'var(--verdict-partial-text)' : 'var(--verdict-contradicted-text)',
-                        }}
-                      >
-                        {Math.round(item.trust_score)}% Trust
-                      </span>
-                    ) : (
-                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
-                        Unverified
-                      </span>
-                    )}
+                    <span
+                      className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
+                      style={{
+                        backgroundColor: tierStyle.bg,
+                        color: tierStyle.text,
+                      }}
+                    >
+                      {tierStyle.label}
+                    </span>
                   </div>
                   <p className="line-clamp-2 leading-relaxed" style={{ color: 'var(--text-primary)' }}>
                     {item.caption}
@@ -143,3 +157,4 @@ export function RecentAudits({ onSelectAudit, selectedAuditId, refreshTrigger }:
     </div>
   );
 }
+

@@ -1,137 +1,106 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { ConfidenceTier } from '@/lib/types';
+import { ShieldCheck, CheckCircle2, AlertOctagon, HelpCircle, AlertTriangle } from 'lucide-react';
 
 interface TrustGaugeProps {
-  score: number | null;
-  label?: string;
-  size?: number;
-  strokeWidth?: number;
+  tier?: ConfidenceTier | null;
+  score?: number | null; // Optional fallback compatibility
   status?: string | null;
+  className?: string;
 }
 
 export const TrustGauge: React.FC<TrustGaugeProps> = ({
-  score,
-  label = 'Trust Score',
-  size = 80,
-  strokeWidth = 6,
+  tier,
   status,
+  className = '',
 }) => {
-  const [animatedScore, setAnimatedScore] = useState<number>(0);
-
-  const radius = (size - strokeWidth * 2) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  useEffect(() => {
-    if (score !== null && score !== undefined) {
-      // Trigger smooth 0.8s transition on mount / score change
-      const timer = setTimeout(() => {
-        setAnimatedScore(score);
-      }, 50);
-      return () => clearTimeout(timer);
-    } else {
-      setAnimatedScore(0);
-    }
-  }, [score]);
-
-  // Determine stroke color based on status or score ranges
-  const getStrokeColor = (): string => {
+  const getTierConfig = () => {
     if (status === 'blocked' || status === 'failed') {
-      return 'var(--verdict-false-text)';
+      return {
+        label: 'CRAWL BLOCKED',
+        sublabel: 'Could not access site',
+        color: 'var(--verdict-false-text)',
+        bg: 'var(--verdict-false-bg)',
+        border: 'var(--verdict-false-border)',
+        icon: AlertTriangle,
+      };
     }
-    if (status === 'degraded' || status === 'busy') {
-      return 'var(--verdict-misleading-text)';
+
+    switch (tier) {
+      case 'VERIFIED':
+        return {
+          label: 'VERIFIED',
+          sublabel: '3rd-Party Corroborated',
+          color: 'var(--verdict-verified-text)',
+          bg: 'var(--verdict-verified-bg)',
+          border: 'var(--verdict-verified-border)',
+          icon: ShieldCheck,
+        };
+      case 'LIKELY_TRUE':
+        return {
+          label: 'LIKELY TRUE',
+          sublabel: 'Promoter Self-Attested',
+          color: 'var(--verdict-misleading-text)',
+          bg: 'var(--verdict-misleading-bg)',
+          border: 'var(--verdict-misleading-border)',
+          icon: CheckCircle2,
+        };
+      case 'CONTRADICTED':
+        return {
+          label: 'CONTRADICTED',
+          sublabel: 'Contradicted by Evidence',
+          color: 'var(--verdict-false-text)',
+          bg: 'var(--verdict-false-bg)',
+          border: 'var(--verdict-false-border)',
+          icon: AlertOctagon,
+        };
+      case 'INSUFFICIENT_EVIDENCE':
+      default:
+        return {
+          label: 'INSUFFICIENT EVIDENCE',
+          sublabel: 'No Verifiable Data Found',
+          color: 'var(--verdict-unverified-text)',
+          bg: 'var(--verdict-unverified-bg)',
+          border: 'var(--verdict-unverified-border)',
+          icon: HelpCircle,
+        };
     }
-    if (score === null || score === undefined) {
-      return 'var(--verdict-unverified-text)';
-    }
-    if (score >= 80) return 'var(--verdict-verified-text)';
-    if (score >= 40) return 'var(--verdict-misleading-text)';
-    return 'var(--verdict-false-text)';
   };
 
-  const strokeColor = getStrokeColor();
-  const strokeDashoffset = circumference - (animatedScore / 100) * circumference;
+  const config = getTierConfig();
+  const IconComponent = config.icon;
 
   return (
-    <div className="flex items-center gap-3.5 select-none">
-      {/* Circular SVG Gauge */}
+    <div className={`flex items-center gap-3.5 select-none ${className}`}>
+      {/* Tier Badge Box */}
       <div
-        className="relative flex items-center justify-center"
-        style={{ width: size, height: size }}
+        className="px-4 py-2.5 rounded-lg border-2 flex items-center gap-2.5 transition-all shadow-sm"
+        style={{
+          backgroundColor: config.bg,
+          borderColor: config.border,
+          color: config.color,
+        }}
       >
-        <svg
-          width={size}
-          height={size}
-          className="transform -rotate-90 overflow-visible"
-        >
-          {/* Track Circle */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="var(--bg-elevated)"
-            strokeWidth={strokeWidth}
-            fill="transparent"
-          />
-          {/* Animated Gauge Ring */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke={strokeColor}
-            strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            strokeDashoffset={score !== null ? strokeDashoffset : circumference}
-            strokeLinecap="round"
-            fill="transparent"
-            style={{
-              transition: 'stroke-dashoffset 0.8s ease-out, stroke 0.3s ease',
-            }}
-          />
-        </svg>
-
-        {/* Center Percentage Display */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          {score !== null && score !== undefined ? (
-            <span
-              className="font-black tracking-tight text-base sm:text-lg"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              {animatedScore}%
-            </span>
-          ) : (
-            <span
-              className="font-mono text-xs font-bold uppercase"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              N/A
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Label and Status */}
-      <div className="space-y-0.5">
-        <div
-          className="text-[10px] font-mono uppercase tracking-wider font-semibold"
-          style={{ color: 'var(--text-muted)' }}
-        >
-          {label}
-        </div>
-        <div
-          className="text-xs font-bold tracking-tight"
-          style={{ color: strokeColor }}
-        >
-          {score !== null && score !== undefined
-            ? score >= 80
-              ? 'High Trust'
-              : score >= 40
-              ? 'Partial Trust'
-              : 'Low Trust'
-            : 'Unverified'}
+        <IconComponent className="w-5 h-5 flex-shrink-0 animate-fadeIn" />
+        <div className="flex flex-col">
+          <span
+            className="text-[10px] uppercase tracking-wider font-semibold font-mono opacity-80"
+          >
+            Confidence Tier
+          </span>
+          <span
+            className="text-sm sm:text-base font-extrabold tracking-wide font-mono uppercase"
+          >
+            {config.label}
+          </span>
+          <span className="text-[10px] font-medium opacity-90">
+            {config.sublabel}
+          </span>
         </div>
       </div>
     </div>
   );
 };
+

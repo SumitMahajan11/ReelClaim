@@ -54,7 +54,7 @@ STRESS_TEST_CASES = [
         "expected_check": lambda res: (
             res.check_result is not None and 
             res.check_result.score_breakdown.contradicted_count > 0 and
-            res.check_result.trust_score < 100.0
+            res.check_result.confidence_tier == "CONTRADICTED"
         )
     }
 ]
@@ -110,7 +110,7 @@ def run_stress_tests():
             print(f"Crawl Status: {res.crawl_status}")
             print(f"Extracted Claims Count: {len(res.claims)}")
             if res.check_result:
-                print(f"Trust Score: {res.check_result.trust_score}")
+                print(f"Confidence Tier: {res.check_result.confidence_tier}")
                 print(f"Coverage Status: {res.check_result.coverage_status}")
                 print(f"Summary Label: {res.check_result.summary_label}")
                 print(f"Breakdown: {res.check_result.score_breakdown}")

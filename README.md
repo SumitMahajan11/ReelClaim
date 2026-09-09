@@ -3,14 +3,48 @@
 
 [![Backend Tests](https://github.com/SumitMahajan11/ReelClaim/actions/workflows/test.yml/badge.svg)](https://github.com/SumitMahajan11/ReelClaim/actions/workflows/test.yml)
 
-ReelClaim is an automated claim verification and credibility auditing system for social media promotional reels and captions. By taking raw post captions (e.g., from Instagram Reels, TikTok, or YouTube Shorts), ReelClaim automatically extracts specific promotional promises—such as free course access, money-back refund policies, job guarantees, or pricing offers—discovers the promoter's official landing page, and crawls target site pages to extract ground-truth facts. It then cross-checks each extracted claim against source site facts using a multi-pass verification engine with anti-hallucination guardrails, producing a detailed per-claim verdict (confirmed, contradicted, partial, or not_found) alongside an aggregate trust score.
+ReelClaim is an automated claim-verification and credibility auditing ledger for social media promotional reels and captions. By taking raw post captions (e.g., from Instagram Reels, TikTok, or YouTube Shorts), ReelClaim extracts specific promotional promises—such as free course access, refund policies, job guarantees, or pricing offers—discovers the promoter's official landing page, and crawls target site pages to extract ground-truth facts. It then cross-checks each extracted claim against source site facts using a multi-pass verification engine with anti-hallucination guardrails, producing a structured per-claim verdict and rolling up to an anti-gaming **Confidence Tier**.
+
+---
+
+## Confidence Tier Verdict Model
+
+Rather than collapsing complex claims into a single numeric score that can be gamed by self-attestation (e.g., a scam site scoring well merely by asserting false claims on its own homepage), ReelClaim classifies audits into four discrete confidence tiers:
+
+| Confidence Tier | Description | Key Anti-Gaming Rule |
+| :--- | :--- | :--- |
+| **`VERIFIED`** | All claims confirmed with zero contradictions. | **Strictly requires at least one independent, non-self-attested 3rd-party source.** Claims backed solely by the promoter's own website/self-attestation can NEVER achieve `VERIFIED`. |
+| **`LIKELY_TRUE`** | Positive evidence exists with zero contradictions, but relies primarily on self-attested site documentation. | Max tier achievable when evidence is sourced exclusively from the promoter's own landing page or site crawl. |
+| **`CONTRADICTED`** | One or more promotional claims directly conflict with published site facts or legal terms. | Triggered whenever any extracted claim is contradicted. |
+| **`INSUFFICIENT_EVIDENCE`** | Target site could not be crawled, facts could not be extracted, or claims remain unaddressed. | Assigned when no claims are verifiable (`unverified_no_data`). |
+
+Per-claim counts (`confirmed_count`, `partial_count`, `contradicted_count`, `unverified_count`) are preserved and rolled up deterministically into the confidence tier.
+
+---
+
+## Privacy & Access Model
+
+ReelClaim enforces submitter privacy by default:
+- **No Public Enumeration**: The public listing endpoint (`GET /audits`) has been permanently removed to prevent enumeration of past audits by third parties.
+- **Submitter-Scoped History**: Audit history in the UI is stored locally within the submitter's browser (`localStorage`).
+- **Direct Audit Lookup**: Audits can be shared or retrieved only by explicit audit UUID (`GET /audits/{audit_id}`).
+
+---
+
+## Platform Ingestion Scope
+
+We believe in being transparent about current ingestion capabilities:
+
+- **Instagram Reels**: Requires **manual copy-paste** of reel captions and profile links. *Why?* Instagram's platform Terms of Service and anti-scraping policies strictly prohibit unauthorized automated caption scraping. Manual submission guarantees compliance with platform rules.
+- **YouTube Shorts & Videos**: Manual caption and URL submission today. Automated YouTube transcript and audio extraction pipeline is scheduled for **Phase 2**.
+- **TikTok / Other Platforms**: Direct caption and promotional URL input.
 
 ---
 
 ## Deployment & Quick Start
 
-[![Deploy to Render](https://render.com/images/deploy-to-render.svg)](https://render.com/deploy?repo=https://github.com/SumitMahajan11/Instafake)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/SumitMahajan11/Instafake&root-directory=reelclaim-frontend)
+[![Deploy to Render](https://render.com/images/deploy-to-render.svg)](https://render.com/deploy?repo=https://github.com/SumitMahajan11/ReelClaim)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/SumitMahajan11/ReelClaim&root-directory=reelclaim-frontend)
 
 ### Quick Start with Docker Compose
 
@@ -27,11 +61,9 @@ ReelClaim is an automated claim verification and credibility auditing system for
 
 ---
 
-## Architecture & 3-Phase Pipeline
+## Architecture & Verification Pipeline
 
 ReelClaim consists of two core services: **`reelclaim-backend`** (Python 3.13, FastAPI, Pydantic v2, Playwright, BeautifulSoup4, `google-generativeai`) and **`reelclaim-frontend`** (Next.js 15, TypeScript, Tailwind CSS).
-
-The audit pipeline operates across 3 sequential phases:
 
 ```mermaid
 flowchart TD
@@ -53,34 +85,38 @@ flowchart TD
         JS_Check -- No --> ExtrFacts[Extract Embedded JSON & Clean Text]
         Tier2 --> ExtrFacts
         
-        ExtrFacts -->|Gemini LLM| SiteFacts[Structured Site Facts]
+        ExtrFacts -->|Gemini LLM| SiteFacts[Structured Site Facts & Attestation Tag]
         
-        Claims & SiteFacts --> P3[Phase 3: Cross-Check & Trust-Score Engine]
+        Claims & SiteFacts --> P3[Phase 3: Cross-Check & Confidence Tier Engine]
         
         subgraph PassEngine ["Phase 3: 3-Pass Verification"]
-            P3 --> Pass1[Pass 1: Prioritized Category & Alias Filter]
-            Pass1 --> Pass2[Pass 2: LLM Verification & Reasoning]
+            P3 --> Pass1[Pass 1: Category & Hierarchy Filter]
+            Pass1 --> Pass2[Pass 2: LLM Verification & Source Tagging]
             Pass2 --> Pass3[Pass 3: Calibrated Anti-Hallucination Guardrail]
         end
         
-        Pass3 --> Score[Calculate Trust Score & Coverage Status]
+        Pass3 --> Score[Determine Confidence Tier: VERIFIED / LIKELY_TRUE / CONTRADICTED / INSUFFICIENT_EVIDENCE]
     end
 
     Score --> Response[FullAuditResponse JSON]
-    Response --> UI_Render[Render Trust Gauge & Verdict Cards]
+    Response --> UI_Render[Render Confidence Tier Badge & Evidence Cards]
 ```
 
-### Pipeline Overview
-1. **Phase 1 (Claim Extraction)**: Receives the reel caption, uses Google Gemini (`gemini-3.5-flash-lite`) with structured JSON output schemas to identify any promoted website URL and extract specific claim items across standard categories (`price`, `discount`, `refund`, `certificate`, `eligibility`, `deadline`, `salary`, `partnership`, `other`).
+### Pipeline Details
+1. **Phase 1 (Claim Extraction)**: Receives the reel caption, uses Google Gemini (`gemini-3.5-flash-lite`) with structured JSON schemas to identify any promoted website URL and extract specific claim items across standard categories (`price`, `discount`, `refund`, `certificate`, `eligibility`, `deadline`, `salary`, `partnership`, `other`).
 2. **Phase 2 (Site Crawler)**: Validates `robots.txt` compliance and crawls up to 5 key site pages (`home`, `pricing`, `terms`, `faq`, `registration`, `refund_policy`). It utilizes a two-tier fetching strategy:
    - **Tier 1 (Requests + BS4)**: Parses standard HTML and embedded JSON scripts (`__NEXT_DATA__`, `__NUXT_DATA__`, `application/ld+json`).
-   - **Tier 2 (Playwright Chromium Fallback)**: Automatically triggered if Tier 1 encounters a client-rendered JavaScript SPA shell (< 200 text characters). Playwright executions are guarded by a singleton process manager, concurrency thread lock, memory limit circuit breaker, and timeout controls.
-   - Structured facts are extracted per page via Gemini.
-3. **Phase 3 (Cross-Check & Trust Score Engine)**:
-   - **Pass 1 (Category & Alias Match)**: Pairs claims with candidate facts using category hierarchy and fallback aliases to prevent shadowing.
-   - **Pass 2 (LLM Verification)**: Generates preliminary verdicts and evidence quotes via Gemini with strict system instruction boundaries and untrusted data tags.
-   - **Pass 3 (Anti-Hallucination Guardrail)**: Programmatically validates quoted evidence against source facts. If evidence introduces unsupported critical qualifiers (e.g., "no questions asked", "unconditional") or fails token overlap and string similarity thresholds, the verdict is overridden to `not_found`.
-   - **Score Calculation**: Computes an aggregate trust score based on addressed claims (`confirmed` = 1.0, `partial` = 0.5, `contradicted` = -1.0). Returns `null` (`unverified_no_data`) if no claims are addressed by crawled site facts.
+   - **Tier 2 (Playwright Chromium Fallback)**: Automatically triggered if Tier 1 encounters a client-rendered JavaScript SPA shell (< 200 text characters).
+   - Structured facts are extracted per page via Gemini and marked with `is_self_attested = true` for target site crawls.
+3. **Phase 3 (Cross-Check & Confidence Tier Engine)**:
+   - **Pass 1 (Category & Alias Match)**: Pairs claims with candidate facts using category hierarchy and fallback aliases.
+   - **Pass 2 (LLM Verification)**: Generates preliminary verdicts and evidence quotes via Gemini with strict boundaries.
+   - **Pass 3 (Anti-Hallucination Guardrail)**: Programmatically validates quoted evidence against source facts.
+   - **Confidence Tier Assignment**:
+     - Returns `CONTRADICTED` if `contradicted_count > 0`.
+     - Returns `VERIFIED` only if `contradicted_count == 0`, `confirmed_count > 0`, and at least one confirming fact is from an independent (non-self-attested) source.
+     - Returns `LIKELY_TRUE` if `confirmed_count > 0` and zero contradictions, but evidence is exclusively self-attested.
+     - Returns `INSUFFICIENT_EVIDENCE` if no claims could be verified.
 
 ---
 

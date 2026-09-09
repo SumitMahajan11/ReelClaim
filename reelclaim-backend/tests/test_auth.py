@@ -18,6 +18,7 @@ def test_auth_disabled_by_default(tmp_path):
         client = TestClient(app)
         with patch("app.main.extract_claims") as mock_extract, \
              patch("app.main.crawl_site") as mock_crawl, \
+             patch("app.main.gather_all_evidence", return_value=[]) as mock_gather, \
              patch("app.main.cross_check_claims") as mock_check:
 
             mock_extract.return_value.promoted_site = "https://example.com"
@@ -25,7 +26,7 @@ def test_auth_disabled_by_default(tmp_path):
             mock_crawl.return_value.crawl_status = "success"
             mock_crawl.return_value.facts = []
             mock_check.return_value = CheckResponse(
-                trust_score=90.0,
+                confidence_tier="LIKELY_TRUE",
                 coverage_status="verified",
                 summary_label="Confirmed",
                 score_breakdown=ScoreBreakdown(confirmed_count=1, partial_count=0, contradicted_count=0, not_found_count=0, addressed_claims=1, total_claims=1),
@@ -67,6 +68,7 @@ def test_auth_valid_key_success():
 
         with patch("app.main.extract_claims") as mock_extract, \
              patch("app.main.crawl_site") as mock_crawl, \
+             patch("app.main.gather_all_evidence", return_value=[]) as mock_gather, \
              patch("app.main.cross_check_claims") as mock_check:
 
             mock_extract.return_value.promoted_site = "https://example.com"
@@ -74,7 +76,7 @@ def test_auth_valid_key_success():
             mock_crawl.return_value.crawl_status = "success"
             mock_crawl.return_value.facts = []
             mock_check.return_value = CheckResponse(
-                trust_score=95.0,
+                confidence_tier="LIKELY_TRUE",
                 coverage_status="verified",
                 summary_label="Confirmed",
                 score_breakdown=ScoreBreakdown(confirmed_count=1, partial_count=0, contradicted_count=0, not_found_count=0, addressed_claims=1, total_claims=1),
@@ -100,6 +102,7 @@ def test_auth_rate_limiting_returns_429():
 
         with patch("app.main.extract_claims") as mock_extract, \
              patch("app.main.crawl_site") as mock_crawl, \
+             patch("app.main.gather_all_evidence", return_value=[]) as mock_gather, \
              patch("app.main.cross_check_claims") as mock_check:
 
             mock_extract.return_value.promoted_site = "https://example.com"
@@ -107,7 +110,7 @@ def test_auth_rate_limiting_returns_429():
             mock_crawl.return_value.crawl_status = "success"
             mock_crawl.return_value.facts = []
             mock_check.return_value = CheckResponse(
-                trust_score=100.0,
+                confidence_tier="INSUFFICIENT_EVIDENCE",
                 coverage_status="verified",
                 summary_label="Confirmed",
                 score_breakdown=ScoreBreakdown(confirmed_count=0, partial_count=0, contradicted_count=0, not_found_count=0, addressed_claims=0, total_claims=0),

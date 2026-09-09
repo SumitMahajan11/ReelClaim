@@ -25,9 +25,10 @@ def upgrade() -> None:
         sa.Column('claims', sa.JSON(), nullable=True),
         sa.Column('crawl_status', sa.String(length=50), nullable=True),
         sa.Column('verdicts', sa.JSON(), nullable=True),
-        sa.Column('trust_score', sa.Float(), nullable=True),
+        sa.Column('confidence_tier', sa.String(length=50), nullable=True),
         sa.Column('coverage_status', sa.String(length=50), nullable=True),
         sa.Column('summary_label', sa.Text(), nullable=True),
+        sa.Column('facts', sa.JSON(), nullable=True),
         sa.Column('status', sa.String(length=50), nullable=True),
         sa.PrimaryKeyConstraint('id')
     )

@@ -1,9 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Loader2, AlertCircle, Link as LinkIcon, FileText, Info, Key } from 'lucide-react';
+import { Search, Loader2, AlertCircle, Link as LinkIcon, FileText, Info, Key, Video } from 'lucide-react';
 import { ProgressStep } from '@/lib/types';
 
+const YoutubeIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+  </svg>
+);
+
+export interface AuditFormSubmitParams {
+  caption?: string;
+  videoUrl?: string;
+  overrideUrl?: string;
+  apiKey?: string;
+  youtubeApiKey?: string;
+}
+
 interface AuditFormProps {
-  onSubmit: (caption: string, url: string, apiKey?: string) => void;
+  onSubmit: (params: AuditFormSubmitParams) => void;
   isLoading: boolean;
   currentStep: ProgressStep;
   retryDetails?: { retryAttempt?: number; maxRetries?: number; nextDelaySec?: number } | null;
@@ -12,36 +26,49 @@ interface AuditFormProps {
 
 const PRESET_EXAMPLES = [
   {
-    label: 'Vercel Free Tier Reel',
-    caption: 'Vercel Hobby plan is 100% free forever for personal projects with zero monthly fees!',
-    url: 'https://vercel.com/pricing'
+    platform: 'youtube' as const,
+    label: 'YouTube Short: Boot.dev Review',
+    videoUrl: 'https://youtube.com/shorts/3f5G8kL9XYZ',
+    overrideUrl: 'https://boot.dev/pricing',
+    caption: 'Boot.dev monthly coding subscription and 30-day refund guarantee review.'
   },
   {
-    label: 'GitHub Actions Reel (Partial)',
+    platform: 'youtube' as const,
+    label: 'YouTube Short: Vercel Free Tier',
+    videoUrl: 'https://youtube.com/shorts/vercelHobbyTier',
+    overrideUrl: 'https://vercel.com/pricing',
+    caption: 'Vercel Hobby plan is 100% free forever for personal projects with zero monthly fees.'
+  },
+  {
+    platform: 'instagram' as const,
+    label: 'IG Reel: GitHub Actions (Partial)',
     caption: 'GitHub Free plan includes unlimited public/private repositories with 2,000 Action automation minutes per month!',
-    url: 'https://github.com/pricing'
+    overrideUrl: 'https://github.com/pricing',
+    videoUrl: ''
   },
   {
-    label: 'Codecademy Trial Reel',
+    platform: 'instagram' as const,
+    label: 'IG Reel: Codecademy 7-Day Trial',
     caption: 'Codecademy Pro membership gives access to all skill paths with a 7-day free trial included!',
-    url: 'https://www.codecademy.com/pricing'
+    overrideUrl: 'https://www.codecademy.com/pricing',
+    videoUrl: ''
   },
   {
-    label: 'Boot.dev Planted False Reel',
+    platform: 'instagram' as const,
+    label: 'IG Reel: Planted False Guarantee',
     caption: '100% Free Full-Stack Web Development Bootcamp with no fees ever! Also no refunds provided under any circumstances.',
-    url: 'https://boot.dev/pricing'
-  },
-  {
-    label: 'Quora Blocked Site Reel',
-    caption: 'Quora offers free unlimited expert Q&A answers with zero registration fee!',
-    url: 'https://quora.com'
+    overrideUrl: 'https://boot.dev/pricing',
+    videoUrl: ''
   }
 ];
 
 export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, currentStep, retryDetails, error }) => {
+  const [platform, setPlatform] = useState<'youtube' | 'instagram'>('youtube');
+  const [videoUrl, setVideoUrl] = useState<string>('');
   const [caption, setCaption] = useState<string>('');
   const [url, setUrl] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
+  const [youtubeApiKey, setYoutubeApiKey] = useState<string>('');
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
@@ -60,22 +87,43 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
     return () => clearInterval(interval);
   }, [isLoading]);
 
-  // Dynamic rotating status message based on measured timings (HTTP: 2-5s, SPA: 18-28s, Cold start: 50s+)
+  // Dynamic rotating status message based on measured timings
   const getStatusMessage = (): string => {
     if (currentStep === 'crawling_busy') {
-      return `Server busy — retrying (attempt ${retryDetails?.retryAttempt || 1} of ${retryDetails?.maxRetries || 4}) in ${retryDetails?.nextDelaySec || 3}s... (Usually resolves shortly)`;
+      return `Server busy — retrying (attempt ${retryDetails?.retryAttempt || 1} of ${retryDetails?.maxRetries || 4}) in ${retryDetails?.nextDelaySec || 3}s...`;
     }
 
-    if (elapsedSeconds < 3) {
-      return 'Extracting claims from social caption...';
-    } else if (elapsedSeconds < 7) {
-      return 'Loading page & checking site structure...';
-    } else if (elapsedSeconds < 15) {
-      return 'Crawling DOM facts with Playwright engine...';
+    if (platform === 'youtube' && elapsedSeconds < 3) {
+      return 'Fetching YouTube video metadata & audio captions...';
+    } else if (elapsedSeconds < 6) {
+      return 'Extracting claims from transcript & caption...';
+    } else if (elapsedSeconds < 14) {
+      return 'Gathering multi-source evidence (Site, Search, Wayback, WHOIS)...';
     } else if (elapsedSeconds < 24) {
-      return 'Cross-checking claims with Gemini...';
+      return 'Cross-checking claims with Gemini Consensus Engine...';
     } else {
       return 'Finalizing claim verification report...';
+    }
+  };
+
+  const handleVideoUrlChange = (val: string) => {
+    setVideoUrl(val);
+    setValidationError(null);
+    if (val.includes('instagram.com') && platform === 'youtube') {
+      setPlatform('instagram');
+    }
+  };
+
+  const handleCaptionChange = (val: string) => {
+    setCaption(val);
+    setValidationError(null);
+    if ((val.includes('youtube.com/shorts') || val.includes('youtu.be/')) && platform === 'instagram') {
+      // Auto-switch to YouTube if user pasted a YouTube link in caption
+      const match = val.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/shorts\/|youtu\.be\/)[^\s]+/);
+      if (match) {
+        setVideoUrl(match[0]);
+        setPlatform('youtube');
+      }
     }
   };
 
@@ -83,26 +131,56 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
     e.preventDefault();
     setValidationError(null);
 
-    if (!caption.trim()) {
-      setValidationError('Please paste or enter a social media reel caption.');
-      return;
-    }
-
-    if (url.trim()) {
-      try {
-        new URL(url.startsWith('http') ? url : `https://${url}`);
-      } catch {
-        setValidationError('Please enter a valid site URL (e.g., https://example.com).');
+    if (platform === 'youtube') {
+      if (!videoUrl.trim()) {
+        setValidationError('Please enter a valid YouTube Shorts or Video URL.');
         return;
       }
+      try {
+        new URL(videoUrl.startsWith('http') ? videoUrl : `https://${videoUrl}`);
+      } catch {
+        setValidationError('Please enter a valid YouTube URL (e.g., https://youtube.com/shorts/...).');
+        return;
+      }
+      onSubmit({
+        videoUrl: videoUrl.trim(),
+        overrideUrl: url.trim() || undefined,
+        apiKey: apiKey.trim() || undefined,
+        youtubeApiKey: youtubeApiKey.trim() || undefined
+      });
+    } else {
+      if (!caption.trim()) {
+        setValidationError('Please paste or enter the social media reel caption/claim text.');
+        return;
+      }
+      if (url.trim()) {
+        try {
+          new URL(url.startsWith('http') ? url : `https://${url}`);
+        } catch {
+          setValidationError('Please enter a valid site URL (e.g., https://example.com).');
+          return;
+        }
+      }
+      onSubmit({
+        caption: caption.trim(),
+        overrideUrl: url.trim() || undefined,
+        apiKey: apiKey.trim() || undefined,
+        youtubeApiKey: youtubeApiKey.trim() || undefined
+      });
     }
-
-    onSubmit(caption.trim(), url.trim(), apiKey.trim());
   };
 
   const handlePresetSelect = (preset: typeof PRESET_EXAMPLES[0]) => {
-    setCaption(preset.caption);
-    setUrl(preset.url);
+    setPlatform(preset.platform);
+    if (preset.platform === 'youtube') {
+      setVideoUrl(preset.videoUrl);
+      setUrl(preset.overrideUrl);
+      setCaption('');
+    } else {
+      setCaption(preset.caption);
+      setUrl(preset.overrideUrl);
+      setVideoUrl('');
+    }
     setValidationError(null);
   };
 
@@ -134,23 +212,64 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
 
   return (
     <div className="w-full space-y-6">
-      {/* Header Info — plain small-caps mono eyebrow, no pill badge */}
+      {/* Header Info */}
       <div className="space-y-2">
         <span
           className="text-[10px] uppercase tracking-widest font-semibold"
           style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', letterSpacing: '0.12em' }}
         >
-          Reel Claim Intake
+          Claim Intake & Verification
         </span>
         <h2
           className="text-lg font-bold tracking-tight leading-snug"
           style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-primary)' }}
         >
-          Audit Claims Against Site Evidence
+          Audit Claims Against Multi-Source Evidence
         </h2>
         <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-          Paste a promotional caption and optional URL. ReelClaim extracts verifiable claims and cross-checks them against published site pages.
+          Verify promotional claims from YouTube Shorts and Instagram Reels against site terms, independent reviews, Wayback history, and WHOIS domain age.
         </p>
+      </div>
+
+      {/* Platform Selector Tabs */}
+      <div className="grid grid-cols-2 p-1 rounded-xl border gap-1" style={{ backgroundColor: 'var(--bg-card-subtle)', borderColor: 'var(--border-med)' }}>
+        <button
+          type="button"
+          onClick={() => setPlatform('youtube')}
+          className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+            platform === 'youtube' ? 'shadow-sm' : 'opacity-70 hover:opacity-100'
+          }`}
+          style={{
+            backgroundColor: platform === 'youtube' ? 'var(--bg-elevated)' : 'transparent',
+            color: platform === 'youtube' ? 'var(--text-primary)' : 'var(--text-muted)',
+            border: platform === 'youtube' ? '1px solid var(--border-bright)' : '1px solid transparent',
+          }}
+        >
+          <YoutubeIcon className="w-4 h-4 text-red-500" />
+          <span>YouTube Shorts</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-red-950/60 text-red-300 border border-red-800/60">
+            AUTO
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setPlatform('instagram')}
+          className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+            platform === 'instagram' ? 'shadow-sm' : 'opacity-70 hover:opacity-100'
+          }`}
+          style={{
+            backgroundColor: platform === 'instagram' ? 'var(--bg-elevated)' : 'transparent',
+            color: platform === 'instagram' ? 'var(--text-primary)' : 'var(--text-muted)',
+            border: platform === 'instagram' ? '1px solid var(--border-bright)' : '1px solid transparent',
+          }}
+        >
+          <FileText className="w-3.5 h-3.5 text-purple-400" />
+          <span>Instagram Reels</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-purple-950/60 text-purple-300 border border-purple-800/60">
+            MANUAL
+          </span>
+        </button>
       </div>
 
       {/* Preset Demo Options */}
@@ -163,13 +282,14 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
               type="button"
               onClick={() => handlePresetSelect(preset)}
               disabled={isLoading}
-              className="text-[11px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer disabled:opacity-50 hover:opacity-80"
+              className="text-[11px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer disabled:opacity-50 hover:opacity-80 flex items-center gap-1.5"
               style={{
                 backgroundColor: 'var(--bg-card-subtle)',
                 borderColor: 'var(--border-subtle)',
                 color: 'var(--text-primary)',
               }}
             >
+              <span className={`w-1.5 h-1.5 rounded-full ${preset.platform === 'youtube' ? 'bg-red-400' : 'bg-purple-400'}`} />
               {preset.label}
             </button>
           ))}
@@ -177,47 +297,125 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Caption Textarea */}
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-            <FileText className="w-3.5 h-3.5" style={{ color: 'var(--text-accent)' }} />
-            Social Media Caption Text <span className="text-rose-500">*</span>
-          </label>
-          <textarea
-            rows={4}
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-            disabled={isLoading}
-            placeholder="Paste reel caption, text overlay, or promotional copy..."
-            className="w-full px-3 py-2.5 border rounded-xl text-xs transition-all resize-y focus:outline-none focus:ring-2"
-            style={{
-              backgroundColor: 'var(--bg-card-subtle)',
-              borderColor: 'var(--border-med)',
-              color: 'var(--text-primary)',
-            }}
-          />
-        </div>
+        {/* YouTube Ingest Path */}
+        {platform === 'youtube' ? (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  <LinkIcon className="w-3.5 h-3.5 text-red-400" />
+                  YouTube Short / Video URL <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-1.5 py-0.5 rounded">
+                  URL-Only Ingest
+                </span>
+              </div>
+              <input
+                type="text"
+                value={videoUrl}
+                onChange={(e) => handleVideoUrlChange(e.target.value)}
+                disabled={isLoading}
+                placeholder="https://youtube.com/shorts/dQw4w9WgXcQ or https://youtu.be/..."
+                className="w-full px-3 py-2.5 border rounded-xl text-xs font-mono transition-all focus:outline-none focus:ring-2"
+                style={{
+                  backgroundColor: 'var(--bg-card-subtle)',
+                  borderColor: 'var(--border-med)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+            </div>
 
-        {/* URL Input */}
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-            <LinkIcon className="w-3.5 h-3.5" style={{ color: 'var(--text-accent)' }} />
-            Promoted Site URL <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>(Optional)</span>
-          </label>
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            disabled={isLoading}
-            placeholder="https://boot.dev/pricing"
-            className="w-full px-3 py-2 border rounded-xl text-xs transition-all focus:outline-none focus:ring-2"
-            style={{
-              backgroundColor: 'var(--bg-card-subtle)',
-              borderColor: 'var(--border-med)',
-              color: 'var(--text-primary)',
-            }}
-          />
-        </div>
+            {/* Explanatory Notice for YouTube Auto-Ingest */}
+            <div className="p-3 rounded-lg border text-[11px] leading-relaxed space-y-1" style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}>
+              <div className="flex items-start gap-1.5">
+                <span className="font-semibold text-emerald-400">✓ Auto-Ingest Active:</span>
+                <span>
+                  ReelClaim connects to the official YouTube API and transcript engine to automatically extract the video title, description, and audio captions.
+                </span>
+              </div>
+            </div>
+
+            {/* Optional Promoted URL Override */}
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <LinkIcon className="w-3.5 h-3.5" style={{ color: 'var(--text-accent)' }} />
+                Promoted Landing Page URL <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>(Optional override if not in video description)</span>
+              </label>
+              <input
+                type="text"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                disabled={isLoading}
+                placeholder="https://boot.dev/pricing"
+                className="w-full px-3 py-2 border rounded-xl text-xs transition-all focus:outline-none focus:ring-2"
+                style={{
+                  backgroundColor: 'var(--bg-card-subtle)',
+                  borderColor: 'var(--border-med)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          /* Instagram Manual Caption Path */
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  <FileText className="w-3.5 h-3.5 text-purple-400" />
+                  Instagram Reel Caption & Claims <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[10px] font-mono text-purple-300 bg-purple-950/40 border border-purple-800/40 px-1.5 py-0.5 rounded">
+                  Manual Text Paste
+                </span>
+              </div>
+              <textarea
+                rows={4}
+                value={caption}
+                onChange={(e) => handleCaptionChange(e.target.value)}
+                disabled={isLoading}
+                placeholder="Paste Instagram reel caption, promotional copy, or spoken claims..."
+                className="w-full px-3 py-2.5 border rounded-xl text-xs transition-all resize-y focus:outline-none focus:ring-2"
+                style={{
+                  backgroundColor: 'var(--bg-card-subtle)',
+                  borderColor: 'var(--border-med)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+            </div>
+
+            {/* Explanatory Notice for Instagram Policy */}
+            <div className="p-3 rounded-lg border text-[11px] leading-relaxed space-y-1" style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}>
+              <div className="flex items-start gap-1.5">
+                <span className="font-semibold text-purple-300">ℹ Instagram Policy Notice:</span>
+                <span>
+                  Instagram Graph API requires complex App Review for public caption scraping. Paste the caption text from the reel to check against published site evidence.
+                </span>
+              </div>
+            </div>
+
+            {/* URL Input */}
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <LinkIcon className="w-3.5 h-3.5" style={{ color: 'var(--text-accent)' }} />
+                Promoted Site URL <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>(Optional override if not in caption)</span>
+              </label>
+              <input
+                type="text"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                disabled={isLoading}
+                placeholder="https://boot.dev/pricing"
+                className="w-full px-3 py-2 border rounded-xl text-xs transition-all focus:outline-none focus:ring-2"
+                style={{
+                  backgroundColor: 'var(--bg-card-subtle)',
+                  borderColor: 'var(--border-med)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Collapsible BYOK Section */}
         <div className="space-y-2 pt-1 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -228,34 +426,56 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
             style={{ color: 'var(--text-secondary)' }}
           >
             <Key className="w-3.5 h-3.5" style={{ color: 'var(--text-accent)' }} />
-            <span>Use your own key (BYOK)</span>
+            <span>Custom API Keys (BYOK)</span>
             <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>
               {showAdvanced ? '▲ hide' : '▼ optional'}
             </span>
           </button>
 
           {showAdvanced && (
-            <div className="p-3 rounded-xl border space-y-2 animate-fadeIn" style={{ backgroundColor: 'var(--bg-card-subtle)', borderColor: 'var(--border-med)' }}>
-              <label className="block text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                Google Gemini API Key
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                disabled={isLoading}
-                placeholder="AIzaSy..."
-                className="w-full px-3 py-2 border rounded-xl text-xs font-mono transition-all focus:outline-none focus:ring-2"
-                style={{
-                  backgroundColor: 'var(--bg)',
-                  borderColor: 'var(--border-med)',
-                  color: 'var(--text-primary)',
-                }}
-              />
+            <div className="p-3 rounded-xl border space-y-3 animate-fadeIn" style={{ backgroundColor: 'var(--bg-card-subtle)', borderColor: 'var(--border-med)' }}>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Google Gemini API Key
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  disabled={isLoading}
+                  placeholder="AIzaSy..."
+                  className="w-full px-3 py-2 border rounded-xl text-xs font-mono transition-all focus:outline-none focus:ring-2"
+                  style={{
+                    backgroundColor: 'var(--bg)',
+                    borderColor: 'var(--border-med)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  YouTube Data API v3 Key <span className="text-[10px] font-normal text-muted">(Optional for direct YouTube quota)</span>
+                </label>
+                <input
+                  type="password"
+                  value={youtubeApiKey}
+                  onChange={(e) => setYoutubeApiKey(e.target.value)}
+                  disabled={isLoading}
+                  placeholder="AIzaSy..."
+                  className="w-full px-3 py-2 border rounded-xl text-xs font-mono transition-all focus:outline-none focus:ring-2"
+                  style={{
+                    backgroundColor: 'var(--bg)',
+                    borderColor: 'var(--border-med)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+              </div>
+
               <div className="flex items-start gap-1.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
                 <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: 'var(--text-accent)' }} />
                 <span>
-                  Avoids shared rate limits (20 RPM). Required for high-volume or self-hosted use. Key is stored only in memory for this session and is never persisted.
+                  Keys are used in-memory for this audit session only and are never saved to disk.
                 </span>
               </div>
             </div>
@@ -270,7 +490,7 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
           </div>
         )}
 
-        {/* Submit Button — flat solid fill, NO gradient */}
+        {/* Submit Button */}
         <button
           type="submit"
           disabled={isLoading}
@@ -295,12 +515,11 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
           ) : (
             <>
               <Search className="w-3.5 h-3.5" />
-              <span>Open the case →</span>
+              <span>{platform === 'youtube' ? 'Audit YouTube Short →' : 'Audit Instagram Reel →'}</span>
             </>
           )}
         </button>
       </form>
-
 
       {/* Multi-step Live Loading Progress */}
       {isLoading && (
@@ -319,7 +538,6 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
             </span>
           </div>
 
-          {/* Animated Progress Bar — flat solid, no gradient */}
           <div
             className="w-full h-1.5 overflow-hidden"
             style={{
@@ -340,38 +558,17 @@ export const AuditForm: React.FC<AuditFormProps> = ({ onSubmit, isLoading, curre
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 text-[11px]">
             <div className="p-2 rounded border text-center" style={getStepStatusStyle('extracting')}>
-              1. Extracting
+              1. Ingest & Claims
             </div>
             <div className="p-2 rounded border text-center" style={getStepStatusStyle('crawling')}>
               {currentStep === 'crawling_busy'
                 ? `2. Busy (${retryDetails?.retryAttempt}/${retryDetails?.maxRetries})`
-                : '2. Crawling'}
+                : '2. Multi-Evidence'}
             </div>
             <div className="p-2 rounded border text-center" style={getStepStatusStyle('cross_checking')}>
-              3. Checking
+              3. Checking & Verdict
             </div>
           </div>
-
-          {/* Informational Crawl Timing Note */}
-          {elapsedSeconds >= 6 && currentStep !== 'crawling_busy' && (
-            <div
-              className="flex items-center gap-2 text-[11px] p-2.5 rounded-lg border transition-all"
-              style={{
-                backgroundColor: 'var(--bg)',
-                borderColor: 'var(--border-subtle)',
-                color: 'var(--text-secondary)',
-              }}
-            >
-              <Info className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-accent)' }} />
-              <span>
-                {elapsedSeconds < 15 ? (
-                  'Full SPA crawls typically take 18–28s.'
-                ) : (
-                  'Full SPA crawls typically take 18–28s. Server may take extra time if waking from idle.'
-                )}
-              </span>
-            </div>
-          )}
         </div>
       )}
     </div>

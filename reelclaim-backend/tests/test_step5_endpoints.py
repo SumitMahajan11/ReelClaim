@@ -9,24 +9,33 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.main import app
 from app.models import Claim, SiteFact, CheckRequest
 
-client = TestClient(app)
+from unittest.mock import patch
+from app.models import ExtractionResponse
 
 def test_1_extract_claims_endpoint():
     """Verify POST /extract-claims schema and response."""
-    payload = {"caption": "🔥 100% FREE Python backend bootcamp with verified certificate on boot.dev"}
-    res = client.post("/extract-claims", json=payload)
-    assert res.status_code == 200
-    data = res.json()
-    assert "promoted_site" in data
-    assert "claims" in data
-    assert data["promoted_site"] == "boot.dev"
-    assert len(data["claims"]) > 0
-    for claim in data["claims"]:
-        assert "category" in claim
-        assert "text" in claim
-        assert "confidence" in claim
-        assert "source_type" in claim
-        assert claim["category"] in ["price", "certificate", "partnership", "eligibility", "deadline", "salary", "discount", "refund", "other"]
+    with patch("app.main.extract_claims") as mock_extract:
+        mock_extract.return_value = ExtractionResponse(
+            promoted_site="boot.dev",
+            claims=[
+                Claim(category="price", text="100% FREE Python backend bootcamp", confidence="high", source_type="caption"),
+                Claim(category="certificate", text="verified certificate included", confidence="high", source_type="caption")
+            ]
+        )
+        payload = {"caption": "🔥 100% FREE Python backend bootcamp with verified certificate on boot.dev"}
+        res = client.post("/extract-claims", json=payload)
+        assert res.status_code == 200
+        data = res.json()
+        assert "promoted_site" in data
+        assert "claims" in data
+        assert data["promoted_site"] == "boot.dev"
+        assert len(data["claims"]) > 0
+        for claim in data["claims"]:
+            assert "category" in claim
+            assert "text" in claim
+            assert "confidence" in claim
+            assert "source_type" in claim
+            assert claim["category"] in ["price", "certificate", "partnership", "eligibility", "deadline", "salary", "discount", "refund", "other"]
 
 def test_2_crawl_site_mock_verification():
     """Verify POST /crawl-site endpoint handling."""
@@ -65,18 +74,18 @@ def test_3_check_claims_endpoint():
     res = client.post("/check-claims", json={"claims": claims, "site_facts": facts})
     assert res.status_code == 200
     data = res.json()
-    assert data["trust_score"] == 100.0
+    assert data["confidence_tier"] == "LIKELY_TRUE"
     assert data["coverage_status"] == "verified"
     assert len(data["verdicts"]) == 1
     assert data["verdicts"][0]["verdict"] == "confirmed"
 
 def test_4_audit_reel_invalid_body_422():
     """Verify POST /audit-reel returns 422 on invalid request body."""
-    # Missing required 'caption' field
+    # Missing required 'caption' or 'video_url' field
     res = client.post("/audit-reel", json={"url": "https://example.com"})
     assert res.status_code == 422
     detail = res.json()["detail"]
-    assert any("caption" in str(loc) for err in detail for loc in err.get("loc", []))
+    assert any("caption" in str(err) for err in detail)
 
 def test_5_audit_reel_zero_facts_unverified():
     """Verify POST /audit-reel with a site producing zero facts returns unverified_no_data."""
@@ -93,9 +102,9 @@ def test_5_audit_reel_zero_facts_unverified():
     assert data["crawl_status"] == "success"
     assert data["check_result"] is not None
     check = data["check_result"]
-    assert check["trust_score"] is None
+    assert check["confidence_tier"] == "INSUFFICIENT_EVIDENCE"
     assert check["coverage_status"] == "unverified_no_data"
-    assert "Unverified" in check["summary_label"]
+    assert "Insufficient Evidence" in check["summary_label"]
     assert check["score_breakdown"]["addressed_claims"] == 0
 
 if __name__ == "__main__":

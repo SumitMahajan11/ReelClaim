@@ -32,7 +32,7 @@ def test_db_persistence_and_crud(tmp_path):
             Claim(text="Plan is $10/mo", category="price", source_type="caption", confidence="high")
         ]
         check_result = CheckResponse(
-            trust_score=100.0,
+            confidence_tier="LIKELY_TRUE",
             coverage_status="verified",
             summary_label="Claim is confirmed by site pricing page.",
             score_breakdown=ScoreBreakdown(
@@ -51,13 +51,25 @@ def test_db_persistence_and_crud(tmp_path):
             ]
         )
 
+        mock_facts = [
+            {
+                "source_name": "cross_reference",
+                "trust_weight": 0.85,
+                "content": "Independent review notes $10/mo pricing.",
+                "raw_reference": "https://trustpilot.com/review/example.com",
+                "category": "price",
+                "is_self_attested": False
+            }
+        ]
+
         audit_id = save_audit_record(
             caption="Check our $10/mo plan on example.com/pricing",
             promoted_site="example.com/pricing",
             override_url=None,
             claims=claims,
             crawl_status="success",
-            check_result=check_result
+            check_result=check_result,
+            facts=mock_facts
         )
 
         assert audit_id is not None
@@ -67,16 +79,12 @@ def test_db_persistence_and_crud(tmp_path):
         assert record is not None
         assert record["id"] == audit_id
         assert record["caption"] == "Check our $10/mo plan on example.com/pricing"
-        assert record["trust_score"] == 100.0
+        assert record["confidence_tier"] == "LIKELY_TRUE"
         assert len(record["claims"]) == 1
         assert len(record["verdicts"]) == 1
         assert record["verdicts"][0]["verdict"] == "confirmed"
-
-        # List recent audits
-        audit_list = list_recent_audit_records(limit=10, offset=0)
-        assert audit_list["total"] == 1
-        assert len(audit_list["audits"]) == 1
-        assert audit_list["audits"][0]["id"] == audit_id
+        assert len(record["facts"]) == 1
+        assert record["facts"][0]["source_name"] == "cross_reference"
 
 def test_api_audit_persistence_endpoints(tmp_path):
     db_file = tmp_path / "test_api.db"
@@ -89,17 +97,18 @@ def test_api_audit_persistence_endpoints(tmp_path):
         # Mock phase 1, 2, 3 calls inside audit-reel endpoint
         with patch("app.main.extract_claims") as mock_extract, \
              patch("app.main.crawl_site") as mock_crawl, \
+             patch("app.main.gather_all_evidence") as mock_gather, \
              patch("app.main.cross_check_claims") as mock_check:
             
             mock_extract.return_value.promoted_site = "https://example.com"
             mock_extract.return_value.claims = [Claim(text="Free trial", category="discount", source_type="caption", confidence="high")]
 
-            
             mock_crawl.return_value.crawl_status = "success"
             mock_crawl.return_value.facts = []
+            mock_gather.return_value = []
             
             mock_check.return_value = CheckResponse(
-                trust_score=80.0,
+                confidence_tier="LIKELY_TRUE",
                 coverage_status="partially_verified",
                 summary_label="Trial exists",
                 score_breakdown=ScoreBreakdown(confirmed_count=1, total_claims=1, addressed_claims=1),
@@ -113,20 +122,17 @@ def test_api_audit_persistence_endpoints(tmp_path):
             assert data["id"] is not None
             audit_id = data["id"]
 
-            # GET audit by ID
+            # GET audit by ID works directly for submitter/link holder
             get_res = client.get(f"/audits/{audit_id}")
             assert get_res.status_code == 200
             audit_data = get_res.json()
             assert audit_data["id"] == audit_id
             assert audit_data["caption"] == "Get a free trial at example.com"
-            assert audit_data["trust_score"] == 80.0
+            assert audit_data["confidence_tier"] == "LIKELY_TRUE"
 
-            # GET audits list
-            list_res = client.get("/audits?limit=10&offset=0")
-            assert list_res.status_code == 200
-            list_data = list_res.json()
-            assert list_data["total"] >= 1
-            assert any(a["id"] == audit_id for a in list_data["audits"])
+            # GET /audits is removed to prevent public enumeration / privacy leaks
+            list_res = client.get("/audits")
+            assert list_res.status_code in (404, 405)
 
             # GET non-existent audit ID returns 404
             missing_res = client.get("/audits/non_existent_id_12345")

@@ -1,14 +1,31 @@
+'use client';
+
 import React, { useState } from 'react';
-import { ClaimVerdict } from '@/lib/types';
-import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { ClaimVerdict, FeedbackRequest } from '@/lib/types';
+import { submitAuditFeedback } from '@/lib/api';
+import { ExternalLink, ChevronDown, ChevronUp, Flag, Check, AlertCircle } from 'lucide-react';
 
 interface VerdictCardProps {
   verdictItem: ClaimVerdict;
   index: number;
+  auditId?: string;
+  submitterToken?: string | null;
 }
 
-export const VerdictCard: React.FC<VerdictCardProps> = ({ verdictItem, index }) => {
+export const VerdictCard: React.FC<VerdictCardProps> = ({
+  verdictItem,
+  index,
+  auditId,
+  submitterToken,
+}) => {
   const [showReasoning, setShowReasoning] = useState<boolean>(false);
+  const [showFeedback, setShowFeedback] = useState<boolean>(false);
+  const [feedbackType, setFeedbackType] = useState<FeedbackRequest['feedback_type']>('wrong_verdict');
+  const [expectedVerdict, setExpectedVerdict] = useState<string>('confirmed');
+  const [notes, setNotes] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState<boolean>(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const { claim_text, verdict, evidence_text, source_url, reasoning } = verdictItem;
 
@@ -69,6 +86,35 @@ export const VerdictCard: React.FC<VerdictCardProps> = ({ verdictItem, index }) 
     }
   };
 
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!auditId) {
+      setFeedbackError('Feedback is only available for persisted audits.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFeedbackError(null);
+
+    try {
+      await submitAuditFeedback(
+        auditId,
+        {
+          claim_index: index,
+          feedback_type: feedbackType,
+          expected_verdict: expectedVerdict,
+          user_notes: notes.trim(),
+        },
+        submitterToken
+      );
+      setFeedbackSuccess(true);
+    } catch (err: any) {
+      setFeedbackError(err.message || 'Failed to submit feedback.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const details = getVerdictDetails();
   const domainName = getDomainName(source_url);
 
@@ -104,8 +150,27 @@ export const VerdictCard: React.FC<VerdictCardProps> = ({ verdictItem, index }) 
               {claim_text}
             </p>
 
-            {/* Short Evidence Line + Source Link */}
+            {/* Short Evidence Line + Source Link + Source Attribution Badge */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {verdictItem.evidence_source && (
+                <span
+                  className="font-mono text-[10px] px-1.5 py-0.5 rounded border uppercase tracking-wider font-semibold"
+                  style={{
+                    backgroundColor: verdictItem.is_self_attested ? 'var(--bg-elevated)' : 'var(--verdict-verified-bg)',
+                    color: verdictItem.is_self_attested ? 'var(--text-muted)' : 'var(--verdict-verified-text)',
+                    borderColor: 'var(--border-subtle)',
+                  }}
+                >
+                  {verdictItem.evidence_source === 'cross_reference'
+                    ? '3rd-Party Review'
+                    : verdictItem.evidence_source === 'wayback'
+                    ? 'Wayback History'
+                    : verdictItem.evidence_source === 'whois'
+                    ? 'Domain Registry'
+                    : 'Site Crawl (Self-Attested)'}
+                </span>
+              )}
+
               {evidence_text ? (
                 <span>
                   &ldquo;{evidence_text}&rdquo; —{' '}
@@ -136,7 +201,6 @@ export const VerdictCard: React.FC<VerdictCardProps> = ({ verdictItem, index }) 
         </div>
 
         {/* Right Column: Rotated Stamp Badge with "thud" Animation */}
-        {/* On mobile (<640px), stamp positions inline under the text */}
         <div className="self-end sm:self-center flex-shrink-0 pt-1 sm:pt-0">
           <div
             className="animate-stamp-thud inline-block px-3 py-1.5 rounded border-2 text-xs font-black tracking-widest uppercase shadow-sm select-none"
@@ -155,32 +219,165 @@ export const VerdictCard: React.FC<VerdictCardProps> = ({ verdictItem, index }) 
 
       </div>
 
-      {/* "Why?" Reasoning Toggle */}
-      <div className="pt-1 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+      {/* Action Bar: "Why this verdict?" and "Flag as incorrect" */}
+      <div className="pt-2 border-t flex items-center justify-between gap-3 text-xs" style={{ borderColor: 'var(--border-subtle)' }}>
         <button
           type="button"
           onClick={() => setShowReasoning(!showReasoning)}
-          className="inline-flex items-center gap-1 text-xs transition-colors cursor-pointer font-medium hover:opacity-80"
+          className="inline-flex items-center gap-1 transition-colors cursor-pointer font-medium hover:opacity-80"
           style={{ color: 'var(--text-muted)' }}
         >
           <span>Why this verdict?</span>
           {showReasoning ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
 
-        {showReasoning && (
-          <div
-            className="mt-2 p-3 rounded-lg border text-xs leading-relaxed animate-fadeIn"
-            style={{
-              backgroundColor: 'var(--bg-elevated)',
-              borderColor: 'var(--border-subtle)',
-              color: 'var(--text-secondary)',
-            }}
-          >
-            <span className="font-semibold" style={{ color: 'var(--text-secondary)' }}>Reasoning: </span>
-            {reasoning}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => setShowFeedback(!showFeedback)}
+          className="inline-flex items-center gap-1 transition-colors cursor-pointer text-[11px] font-medium hover:opacity-80"
+          style={{ color: feedbackSuccess ? 'var(--verdict-verified-text)' : 'var(--text-muted)' }}
+        >
+          <Flag className="w-3 h-3" />
+          <span>{feedbackSuccess ? 'Feedback Submitted ✓' : 'Flag as wrong'}</span>
+        </button>
       </div>
+
+      {/* Expandable Reasoning */}
+      {showReasoning && (
+        <div
+          className="mt-2 p-3 rounded-lg border text-xs leading-relaxed animate-fadeIn"
+          style={{
+            backgroundColor: 'var(--bg-elevated)',
+            borderColor: 'var(--border-subtle)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <span className="font-semibold" style={{ color: 'var(--text-secondary)' }}>Reasoning: </span>
+          {reasoning}
+        </div>
+      )}
+
+      {/* Expandable Feedback Form */}
+      {showFeedback && (
+        <div
+          className="mt-2 p-3.5 rounded-xl border text-xs space-y-3 animate-fadeIn"
+          style={{
+            backgroundColor: 'var(--bg-elevated)',
+            borderColor: 'var(--border-subtle)',
+          }}
+        >
+          {feedbackSuccess ? (
+            <div className="flex items-center gap-2 p-2.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+              <Check className="w-4 h-4 flex-shrink-0" />
+              <span>Feedback recorded! Your correction will help improve ReelClaim&apos;s accuracy benchmark.</span>
+            </div>
+          ) : (
+            <form onSubmit={handleFeedbackSubmit} className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[11px] uppercase tracking-wider font-mono" style={{ color: 'var(--text-primary)' }}>
+                  Flag Verdict #{formattedIndex}
+                </span>
+                <span className="text-[10px] text-muted">Owner Session Auth</span>
+              </div>
+
+              {feedbackError && (
+                <div className="flex items-center gap-1.5 p-2 rounded border border-red-500/30 bg-red-500/10 text-red-400 text-[11px]">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{feedbackError}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider font-mono font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>
+                    What went wrong?
+                  </label>
+                  <select
+                    value={feedbackType}
+                    onChange={(e) => setFeedbackType(e.target.value as any)}
+                    className="w-full p-1.5 rounded border text-xs outline-none"
+                    style={{
+                      backgroundColor: 'var(--bg-card)',
+                      borderColor: 'var(--border-subtle)',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    <option value="wrong_verdict">Wrong Verdict (Model error)</option>
+                    <option value="missed_evidence">Missed Site Evidence</option>
+                    <option value="incorrect_claim">Misunderstood Claim Text</option>
+                    <option value="other">Other Issue</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider font-mono font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>
+                    Expected Verdict
+                  </label>
+                  <select
+                    value={expectedVerdict}
+                    onChange={(e) => setExpectedVerdict(e.target.value)}
+                    className="w-full p-1.5 rounded border text-xs outline-none"
+                    style={{
+                      backgroundColor: 'var(--bg-card)',
+                      borderColor: 'var(--border-subtle)',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    <option value="confirmed">Confirmed (Verified)</option>
+                    <option value="contradicted">Contradicted (False)</option>
+                    <option value="partial">Partial / Misleading</option>
+                    <option value="not_found">Unverified (Not Found)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider font-mono font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>
+                  Submitter Notes / Link Context (Optional)
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Explain why this verdict is wrong, or quote the true policy clause..."
+                  rows={2}
+                  className="w-full p-2 rounded border text-xs outline-none resize-none"
+                  style={{
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-subtle)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowFeedback(false)}
+                  className="px-2.5 py-1 rounded text-xs border cursor-pointer hover:opacity-80"
+                  style={{
+                    backgroundColor: 'transparent',
+                    borderColor: 'var(--border-subtle)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-3 py-1 rounded text-xs font-semibold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: '#fff',
+                  }}
+                >
+                  {isSubmitting ? 'Recording...' : 'Submit Feedback'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   );
 };

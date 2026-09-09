@@ -18,35 +18,39 @@ _request_timestamps: Dict[str, List[float]] = defaultdict(list)
 _in_memory_keys: Dict[str, dict] = {}
 
 
+DEFAULT_RATE_LIMIT_PER_HOUR = int(os.getenv("RATE_LIMIT_PER_HOUR", "60"))
+
 def hash_key(raw_key: str) -> str:
     """Computes SHA-256 hash of a raw API key."""
     return hashlib.sha256(raw_key.strip().encode("utf-8")).hexdigest()
 
 
-def register_new_api_key(name: str, rate_limit_per_hour: int = 10) -> Dict[str, str | int]:
+def register_new_api_key(name: str, rate_limit_per_hour: Optional[int] = None) -> Dict[str, str | int]:
     """
     Generates a new raw API key ('rc_live_<uuid_hex>'), hashes it, and persists it.
     Returns the raw key (shown only once) along with metadata.
+    Default rate limit is 60 requests/hour (~1/min burst) tuned for small-scale users.
     """
+    limit = rate_limit_per_hour if rate_limit_per_hour is not None else DEFAULT_RATE_LIMIT_PER_HOUR
     raw_key = f"rc_live_{uuid.uuid4().hex}"
     key_hash = hash_key(raw_key)
 
     # Save to database if available
-    db_id = save_api_key_record(key_hash=key_hash, name=name, rate_limit_per_hour=rate_limit_per_hour)
+    db_id = save_api_key_record(key_hash=key_hash, name=name, rate_limit_per_hour=limit)
 
     # Always keep in memory store as fallback/cache
     _in_memory_keys[key_hash] = {
         "id": db_id or str(uuid.uuid4()),
         "key_hash": key_hash,
         "name": name,
-        "rate_limit_per_hour": rate_limit_per_hour,
+        "rate_limit_per_hour": limit,
         "is_active": True
     }
 
     return {
         "api_key": raw_key,
         "name": name,
-        "rate_limit_per_hour": rate_limit_per_hour,
+        "rate_limit_per_hour": limit,
         "message": "Save this API key securely. It will not be shown again."
     }
 

@@ -1,4 +1,4 @@
-import { FullAuditRequest, FullAuditResponse, RecentAuditsResponse, ProgressStep } from './types';
+import { FullAuditRequest, FullAuditResponse, ProgressStep } from './types';
 
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://reelclaim-api.onrender.com';
@@ -6,18 +6,29 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://reelclaim-api.o
 const RETRY_DELAYS_MS = [3000, 5000, 8000, 10000]; // 3s, 5s, 8s, 10s (cumulative ~26s window)
 
 export async function auditReel(
-  caption: string,
+  captionOrOptions: string | { caption?: string; video_url?: string; override_url?: string; gemini_api_key?: string; youtube_api_key?: string },
   overrideUrl?: string,
   geminiApiKey?: string,
   onStepChange?: (step: ProgressStep, details?: { retryAttempt?: number; maxRetries?: number; nextDelaySec?: number }) => void
 ): Promise<FullAuditResponse> {
   if (onStepChange) onStepChange('extracting');
 
-  const payload: FullAuditRequest = {
-    caption,
-    override_url: overrideUrl && overrideUrl.trim().length > 0 ? overrideUrl.trim() : undefined,
-    gemini_api_key: geminiApiKey && geminiApiKey.trim().length > 0 ? geminiApiKey.trim() : undefined,
-  };
+  let payload: FullAuditRequest;
+  if (typeof captionOrOptions === 'object') {
+    payload = {
+      caption: captionOrOptions.caption,
+      video_url: captionOrOptions.video_url,
+      override_url: captionOrOptions.override_url,
+      gemini_api_key: captionOrOptions.gemini_api_key,
+      youtube_api_key: captionOrOptions.youtube_api_key,
+    };
+  } else {
+    payload = {
+      caption: captionOrOptions,
+      override_url: overrideUrl && overrideUrl.trim().length > 0 ? overrideUrl.trim() : undefined,
+      gemini_api_key: geminiApiKey && geminiApiKey.trim().length > 0 ? geminiApiKey.trim() : undefined,
+    };
+  }
 
 
   const executeRequest = async (): Promise<FullAuditResponse> => {
@@ -96,13 +107,34 @@ export async function fetchAuditById(auditId: string): Promise<FullAuditResponse
   return await response.json();
 }
 
-export async function fetchRecentAudits(limit: number = 10, offset: number = 0): Promise<RecentAuditsResponse> {
-  const response = await fetch(`${API_BASE_URL}/audits?limit=${limit}&offset=${offset}`);
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to fetch recent audits');
+export async function submitAuditFeedback(
+  auditId: string,
+  feedback: import('./types').FeedbackRequest,
+  submitterToken?: string | null
+): Promise<import('./types').FeedbackResponse> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (submitterToken) {
+    headers['X-Submitter-Token'] = submitterToken;
   }
+
+  const response = await fetch(`${API_BASE_URL}/audits/${auditId}/feedback`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      ...feedback,
+      submitter_token: submitterToken || feedback.submitter_token || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.detail || `Failed to submit feedback (${response.status})`);
+  }
+
   return await response.json();
 }
+
 
 
